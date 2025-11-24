@@ -1,193 +1,231 @@
 <?php
 
 /**
- * @file plugins/blocks/mostRead/MostReadBlockPlugin.inc.php
+ * @file plugins/blocks/mostRead/MostReadBlockPlugin.php
  *
  * Copyright (c) 2014-2024 Simon Fraser University
  * Copyright (c) 2003-2024 John Willinsky
  * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
  *
  * @class MostReadBlockPlugin
- * @ingroup plugins_blocks_mostRead
- *
- * @brief Class for "Most Read" block plugin
+ * @brief Plugin class for the most read articles block plugin
  */
 
 namespace APP\plugins\blocks\mostRead;
 
 use APP\core\Application;
-use APP\core\Services;
-use APP\i18n\AppLocale;
 use APP\facades\Repo;
-use APP\template\TemplateManager;
-use Illuminate\Support\Collection;
-use PKP\cache\CacheManager;
-use PKP\core\JSONMessage;
-use PKP\linkAction\LinkAction; 
-use PKP\linkAction\request\AjaxModal;
 use PKP\plugins\BlockPlugin;
-use PKP\submission\PKPSubmission;
+use PKP\plugins\Hook;
+use PKP\linkAction\LinkAction;
+use PKP\linkAction\request\AjaxModal;
+use APP\template\TemplateManager;
+use PKP\core\JSONMessage;
 
 class MostReadBlockPlugin extends BlockPlugin {
-
+	
 	/**
 	 * Install default settings on journal creation.
 	 * @return string
 	 */
-	function getContextSpecificPluginSettingsFile() {
+	public function getContextSpecificPluginSettingsFile() {
 		return $this->getPluginPath() . '/settings.xml';
 	}
 
 	/**
 	 * Get the display name of this plugin.
-	 * @return String
+	 * @return string
 	 */
-	function getDisplayName() {
+	public function getDisplayName() {
 		return __('plugins.blocks.mostRead.displayName');
 	}
 
 	/**
 	 * Get a description of the plugin.
+	 * @return string
 	 */
-	function getDescription() {
+	public function getDescription() {
 		return __('plugins.blocks.mostRead.description');
 	}
 
-	
 	/**
 	 * @copydoc Plugin::getActions()
 	 */
-	function getActions($request, $actionArgs) {
+	public function getActions($request, $actionArgs) {
+		$actions = parent::getActions($request, $actionArgs);
+		if (!$this->getEnabled()) {
+			return $actions;
+		}
 		$router = $request->getRouter();
-		import('lib.pkp.classes.linkAction.request.AjaxModal');
-		return array_merge(
-			$this->getEnabled()?array(
-				new LinkAction(
-					'settings',
-					new AjaxModal(
-						$router->url($request, null, null, 'manage', null, array_merge($actionArgs, array('verb' => 'settings'))),
-						$this->getDisplayName()
+		$dispatcher = $router->getDispatcher();
+		
+		array_unshift(
+			$actions,
+			new LinkAction(
+				'settings',
+				new AjaxModal(
+					$dispatcher->url(
+						$request, 
+						Application::ROUTE_COMPONENT,
+						null,
+						'grid.settings.plugins.SettingsPluginGridHandler',
+						'manage',
+						null,
+						['verb' => 'settings', 'plugin' => $this->getName(), 'category' => 'blocks']
 					),
-					__('manager.plugins.settings'),
-					null
+					$this->getDisplayName()
 				),
-			):array(),
-			parent::getActions($request, $actionArgs)
+				__('manager.plugins.settings'),
+				null
+			)
 		);
+		
+		return $actions;
 	}
 
-    /**
-     * @copydoc Plugin::manage()
-     */
-    public function manage($args, $request)
-    {
-        switch ($request->getUserVar('verb')) {
-            case 'settings':
-                $context = $request->getContext();
-                $templateMgr = TemplateManager::getManager($request);
-                $templateMgr->registerPlugin('function', 'plugin_url', $this->smartyPluginUrl(...));
-
-                $form = new MostReadSettingsForm($this, $context->getId());
-
-                if ($request->getUserVar('save')) {
-                    $form->readInputData();
-                    if ($form->validate()) {
-                        $form->execute();
-                        return new JSONMessage(true);
-                    }
-                } else {
-                    $form->initData();
-                }
-                return new JSONMessage(true, $form->fetch($request));
-        }
-        return parent::manage($args, $request);
-    }
+	/**
+	 * @copydoc Plugin::manage()
+	 */
+	public function manage($args, $request) {
+		switch ($request->getUserVar('verb')) {
+			case 'settings':
+				$context = $request->getContext();
+				$contextId = $context ? $context->getId() : Application::SITE_CONTEXT_ID;
+				
+				$templateMgr = TemplateManager::getManager($request);
+				$templateMgr->registerPlugin('function', 'plugin_url', [$this, 'smartyPluginUrl']);
+				
+				$this->import('MostReadSettingsForm');
+				$form = new MostReadSettingsForm($this, $contextId);
+				
+				if ($request->getUserVar('save')) {
+					$form->readInputData();
+					if ($form->validate()) {
+						$form->execute();
+						return new JSONMessage(true);
+					}
+				} else {
+					$form->initData();
+				}
+				return new JSONMessage(true, $form->fetch($request));
+		}
+		return parent::manage($args, $request);
+	}
 
 	/**
-	 * @copydoc BlockPlugin::getContents
+	 * Get the supported contexts (e.g. BLOCK_CONTEXT_...) for this block.
+	 * @return array
 	 */
-	function getContents($templateMgr, $request = null) 
-	{
+	public function getSupportedContexts() {
+		return [BLOCK_CONTEXT_SIDEBAR];
+	}
+
+	/**
+	 * Get the block context
+	 * @return int
+	 */
+	public function getBlockContext() {
+		return BLOCK_CONTEXT_SIDEBAR;
+	}
+
+	/**
+	 * Get the HTML contents for this block.
+	 * @param $templateMgr PKPTemplateManager
+	 * @param $request PKPRequest
+	 * @return string
+	 */
+	public function getContents($templateMgr, $request = null) {
 		$context = $request->getContext();
-		if (!$context) return '';
+		if (!$context) {
+			return '';
+		}
 		
-		$cacheManager = CacheManager::getManager();
-		$cache = $cacheManager->getCache($context->getId(), 'mostread' , array($this, 'getMostReadCache'));
-
-		$daysToStale = 1;
-		$cachedMetrics = false;
-
-		if (time() - $cache->getCacheTime() > 60 * 60 * 24 * $daysToStale) {
-			$cachedMetrics = $cache->getContents();
-			$cache->flush();
+		$contextId = $context->getId();
+		
+		// Get plugin settings
+		$mostReadDays = $this->getSetting($contextId, 'mostReadDays');
+		if (!$mostReadDays || $mostReadDays < 1) {
+			$mostReadDays = 7; // default value
 		}
-
-		$metrics = $cache->getContents();
-
-		if (!$metrics && $cachedMetrics) {
-			$metrics = $cachedMetrics;
-			$cache->setEntireCache($cachedMetrics);
-		} elseif (!$metrics) {
-			$cache->flush();
+		
+		$mostReadBlockTitle = $this->getSetting($contextId, 'mostReadBlockTitle');
+		$locale = Application::get()->getRequest()->getLocale();
+		
+		$blockTitle = '';
+		if ($mostReadBlockTitle && is_array($mostReadBlockTitle)) {
+			$blockTitle = $mostReadBlockTitle[$locale] ?? __('plugins.blocks.mostRead.settings.blockTitle');
+		} else {
+			$blockTitle = __('plugins.blocks.mostRead.settings.blockTitle');
 		}
-
-		$locale = AppLocale::getLocale();
-		$mostReadBlockTitle = (array) json_decode($this->getSetting($context->getId(), 'mostReadBlockTitle'));
-		$blockTitle = $mostReadBlockTitle[$locale] ? $mostReadBlockTitle[$locale] : "";
-		$templateMgr->assign('blockTitle', $blockTitle);
-
-		$mostRead = [];
-		foreach($metrics as $metric){
-			$submission = Repo::submission()->get($metric['submissionId']);
-			if(isset($submission) && $submission?->getCurrentPublication()->getData('status') === PKPSubmission::STATUS_PUBLISHED) 
-			{
-				$mostRead[] = [
-					'url' => Application::get()->getRequest()->url($context?->getPath(), 'article', 'view', [$submission->getBestId()]),
-					'metric' => $metric['metric'],
-					'title' => $submission?->getCurrentPublication()->getLocalizedFullTitle($locale, 'html')
-                ];
-			}
-		}
-
-		$templateMgr->assign('mostRead', $mostRead);
+		
+		// Get most read articles
+		$mostReadArticles = $this->getMostReadArticles($contextId, $mostReadDays);
+		
+		$templateMgr->assign([
+			'blockTitle' => $blockTitle,
+			'mostReadArticles' => $mostReadArticles,
+		]);
+		
 		return parent::getContents($templateMgr, $request);
 	}
 
 	/**
-	 * Set cache
-	 * @param $cache object
+	 * Get most read articles from metrics
+	 * @param int $contextId
+	 * @param int $days
+	 * @return array
 	 */
-	
-	function getMostReadCache($cache): array 
-	{
-		$mostReadDays = (int) $this->getSetting($cache->context, 'mostReadDays');
-		if (empty($mostReadDays)){
-			$mostReadDays = 7;
+	private function getMostReadArticles($contextId, $days) {
+		$statsService = app()->get('submission')->getStatsService();
+		
+		$dateStart = date('Y-m-d', strtotime("-{$days} days"));
+		$dateEnd = date('Y-m-d');
+		
+		// Get statistics for published articles
+		$args = [
+			'contextIds' => [$contextId],
+			'dateStart' => $dateStart,
+			'dateEnd' => $dateEnd,
+			'count' => 5,
+			'orderBy' => 'total',
+			'orderDirection' => 'DESC',
+		];
+		
+		$statsRecords = $statsService->getRecords($args);
+		
+		$articles = [];
+		
+		foreach ($statsRecords as $record) {
+			$submission = Repo::submission()->get($record->submissionId);
+			
+			if (!$submission || $submission->getData('status') !== STATUS_PUBLISHED) {
+				continue;
+			}
+			
+			$publication = $submission->getCurrentPublication();
+			if (!$publication) {
+				continue;
+			}
+			
+			$articles[] = [
+				'id' => $submission->getId(),
+				'title' => $publication->getLocalizedTitle(),
+				'views' => $record->total,
+				'url' => Application::get()->getRequest()->getDispatcher()->url(
+					Application::get()->getRequest(),
+					Application::ROUTE_PAGE,
+					null,
+					'article',
+					'view',
+					[$submission->getBestId()]
+				)
+			];
+			
+			if (count($articles) >= 5) {
+				break;
+			}
 		}
-		$dayString = "-" . $mostReadDays . " days";
-
-        $mostRead = Services::get('publicationStats')->getTotals([
-            'dateStart' => date('Y-m-d', strtotime($dayString)),
-            'contextIds' => [$cache->context],
-            'count' => 5,
-			'assocTypes' => [Application::ASSOC_TYPE_SUBMISSION_FILE],
-        ]);
-
-        $results = (new Collection($mostRead))
-            ->map(function($result) {
-                $submission = Repo::submission()->get($result->submission_id);
-                return [
-                    'submissionId' => $result->submission_id,
-                    'metric' => $result->metric
-                ];
-            })
-            ->filter(function($result) {
-                return $result['submissionId'] && $result['metric'];
-            })
-            ->toArray();
-
-		$cache->setEntireCache($results);
-		return $results;
-    }
+		
+		return $articles;
+	}
 }
-?>

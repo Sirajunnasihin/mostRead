@@ -5,18 +5,55 @@
  * Copyright (c) 2003-2024 John Willinsky
  * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
  *
- * "Most Read" block.
+ * Most read articles block plugin
  *}
-<div class="pkp_block block_developed_by">
+<div class="pkp_block block_most_read">
+	<h2 class="title">{$blockTitle|escape}</h2>
 	<div class="content">
-		{if isset($blockTitle) }<span class="title">{$blockTitle}</span>{/if}
-			<ul class="most_read">
-			{foreach from=$mostRead item=submission}
-				<li class="most_read_article">
-					<div class="most_read_article_title"><a href="{$submission.url}">{$submission.title}</a></div>
-					<div class="most_read_article_journal"><span class="fa fa-eye"></span> {$submission.metric}</div>
-				</li>
-			{/foreach}
+		{if $mostReadArticles && count($mostReadArticles) > 0}
+			<ul>
+				{foreach from=$mostReadArticles item=article}
+					<li>
+						<a href="{$article.url}">
+							{$article.title|strip_unsafe_html}
+						</a>
+						<div class="views">
+							<i class="fa fa-eye" aria-hidden="true"></i>
+							<span class="view-count">{$article.views|escape}</span>
+						</div>
+					</li>
+				{/foreach}
 			</ul>
+		{else}
+			<p>{translate key="plugins.blocks.mostRead.noArticles"}</p>
+		{/if}
 	</div>
 </div>
+
+<style>
+.block_most_read ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.block_most_read li {
+	margin-bottom: 1em;
+	padding-bottom: 0.5em;
+	border-bottom: 1px solid #ddd;
+}
+
+.block_most_read li:last-child {
+	border-bottom: none;
+}
+
+.block_most_read .views {
+	margin-top: 0.25em;
+	font-size: 0.9em;
+	color: #666;
+}
+
+.block_most_read .view-count {
+	margin-left: 0.25em;
+}
+</style>

@@ -7,27 +7,30 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2021-06-09T10:36:44+02:00\n"
-"PO-Revision-Date: 2021-06-09T10:36:44+02:00\n"
+"POT-Creation-Date: 2024-11-24T00:00:00+00:00\n"
+"PO-Revision-Date: 2024-11-24T00:00:00+00:00\n"
 "Language: \n"
 
 msgid "plugins.blocks.mostRead.displayName"
-msgstr "Most Read Block"
+msgstr "Most Read Articles"
 
 msgid "plugins.blocks.mostRead.description"
-msgstr "This plugin shows most read objects in the sidebar."
-
-msgid "plugins.blocks.mostRead.blockTitle"
-msgstr "Most read last week"
-
-msgid "plugins.blocks.mostRead.settings.title"
-msgstr "Most Read Block settings"
-
-msgid "plugins.blocks.mostRead.settings.days"
-msgstr "Days count"
+msgstr "This plugin displays a list of the most read articles in the sidebar."
 
 msgid "plugins.blocks.mostRead.settings.blockTitle"
-msgstr "Block title"
+msgstr "Most Read"
 
-msgid "plugins.blocks.mostRead.settings.saved"
-msgstr "Most Read Block plugin settings saved"
+msgid "plugins.blocks.mostRead.settings.description"
+msgstr "Configure the Most Read Articles block settings."
+
+msgid "plugins.blocks.mostRead.settings.mostReadDays"
+msgstr "Number of Days"
+
+msgid "plugins.blocks.mostRead.settings.mostReadDaysDescription"
+msgstr "Enter the number of days to calculate most read statistics (default: 7 days)."
+
+msgid "plugins.blocks.mostRead.settings.blockTitleDescription"
+msgstr "Enter a custom title for the Most Read Articles block."
+
+msgid "plugins.blocks.mostRead.noArticles"
+msgstr "No articles available."
